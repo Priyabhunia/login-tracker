@@ -1,0 +1,435 @@
+/* Simple popup styles for Email Tracker Extension */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background: white;
+  width: 350px;
+  color: black;
+}
+
+.container {
+  padding: 16px;
+}
+
+.header {
+  text-align: center;
+  padding: 16px;
+  border-bottom: 1px solid #ccc;
+  margin-bottom: 16px;
+}
+
+.header h1 {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: #666;
+}
+
+.main-content {
+  min-height: 200px;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px 0;
+  color: #666;
+}
+
+.loading p {
+  font-size: 14px;
+}
+
+.no-data {
+  text-align: center;
+  padding: 40px 20px;
+  color: #666;
+}
+
+.no-data p {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.hint {
+  font-size: 12px;
+  color: #999;
+}
+
+.stats-section {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+}
+
+.stat-item {
+  flex: 1;
+  text-align: center;
+}
+
+.stat-label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  display: block;
+  font-size: 18px;
+  font-weight: bold;
+  color: black;
+}
+
+.emails-section h3 {
+  font-size: 16px;
+  margin-bottom: 16px;
+  color: black;
+  font-weight: bold;
+}
+
+.controls {
+  margin-bottom: 16px;
+}
+
+.control-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.add-btn, .toggle-btn {
+  background: #007cba;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  flex: 1;
+}
+
+.add-btn:hover, .toggle-btn:hover {
+  background: #005a87;
+}
+
+.toggle-btn.paused {
+  background: #dc2626;
+}
+
+.toggle-btn.paused:hover {
+  background: #b91c1c;
+}
+
+.emails-container {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.email-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
+}
+
+.email-item:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.email-address {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+
+.email-domains {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.domain-tag {
+  display: inline-block;
+  background: #e0e7ff;
+  color: #4338ca;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+  margin-bottom: 2px;
+}
+
+.email-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.login-count {
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #475569;
+}
+
+.footer {
+  padding: 16px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.clear-btn {
+  width: 100%;
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.clear-btn:hover {
+  background: #dc2626;
+}
+
+.footer-info {
+  text-align: center;
+  margin-top: 8px;
+}
+
+.footer-info small {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+/* Scrollbar styling */
+.emails-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.emails-container::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.emails-container::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.emails-container::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Domain organized layout */
+.domain-item {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.domain-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.domain-name {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 14px;
+}
+
+.domain-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.domain-btn {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 3px;
+  color: #64748b;
+  transition: all 0.2s ease;
+}
+
+.domain-btn:hover {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.domain-btn.delete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.email-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.email-item:last-child {
+  margin-bottom: 0;
+}
+
+.email-info {
+  flex: 1;
+  margin-right: 12px;
+}
+
+.email-address {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-weight: 500;
+  color: #1e293b;
+  margin-bottom: 2px;
+}
+
+.email-meta {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.email-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.email-btn {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 3px;
+  color: #64748b;
+  transition: all 0.2s ease;
+}
+
+.email-btn:hover {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.email-btn.delete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* Manual add form */
+.add-form {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.form-group {
+  margin-bottom: 12px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  margin-bottom: 4px;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.form-row .form-group {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.form-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.form-btn.save {
+  background: #4f46e5;
+  color: white;
+}
+
+.form-btn.save:hover {
+  background: #4338ca;
+}
+
+.form-btn.cancel {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.form-btn.cancel:hover {
+  background: #cbd5e1;
+}
+
+/* Animation for loading state */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.loading p {
+  animation: pulse 2s ease-in-out infinite;
+}

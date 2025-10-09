@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Email Tracker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>My Email Tracker</h1>
+      <p class="subtitle">Track your login emails across websites</p>
+    </header>
+
+    <main class="main-content">
+      <div id="loading" class="loading">
+        <p>Loading your email data...</p>
+      </div>
+
+      <div id="no-data" class="no-data" style="display: none;">
+        <p>No login data found yet.</p>
+        <p class="hint">Log into some websites to see your email history here.</p>
+      </div>
+
+      <div id="email-list" class="email-list" style="display: none;">
+        <div class="stats-section">
+          <div class="stat-item">
+            <span class="stat-label">Total Emails:</span>
+            <span class="stat-value" id="total-emails">0</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Websites:</span>
+            <span class="stat-value" id="total-websites">0</span>
+          </div>
+        </div>
+
+        <div class="emails-section">
+          <h3>Your Login Emails</h3>
+          <div class="controls">
+            <div class="control-buttons">
+              <button id="add-manual" class="add-btn">+ Manually Add</button>
+              <button id="toggle-tracking" class="toggle-btn">⏸️ Pause Tracking</button>
+            </div>
+          </div>
+          <div id="emails-container" class="emails-container">
+            <!-- Email entries will be populated here -->
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <button id="clear-data" class="clear-btn">Clear All Data</button>
+      <div class="footer-info">
+        <small>Emails are stored locally in your browser</small>
+      </div>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
