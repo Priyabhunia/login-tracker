@@ -45,116 +45,192 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// Monitor completed web requests
+// Monitor completed web requests for OAuth redirects (captures emails during login process)
 chrome.webRequest.onCompleted.addListener(
   async (details) => {
-    // Filter for API-like URLs that might contain user data
-    const apiPatterns = [/\/api\//, /\/user/, /\/profile/, /\/account/, /\/me/, /\/auth/, /\/oauth/, /\/accounts\.google/];
-    const isApiUrl = apiPatterns.some(pattern => pattern.test(details.url));
+    // Focus on OAuth and login-related URLs that might contain email in parameters
+    const oauthPatterns = [
+      /\/oauth/,
+      /\/auth/,
+      /\/login/,
+      /\/signin/,
+      /accounts\.google\.com/,
+      /oauth2/,
+      /openid/,
+      /saml/
+    ];
+    const isOAuthUrl = oauthPatterns.some(pattern => pattern.test(details.url));
 
-    // Special handling for Google OAuth endpoints
-    const googlePatterns = [/accounts\.google\.com/, /www\.googleapis\.com/, /oauth2/];
-    const isGoogleOAuth = googlePatterns.some(pattern => pattern.test(details.url));
-
-    if ((isApiUrl || isGoogleOAuth) && details.statusCode === 200) {
-      console.log('API/Google OAuth Request detected:', details.url);
+    if (isOAuthUrl && details.statusCode === 200) {
+      console.log('OAuth/Login Request detected:', details.url);
 
       // Check if tracking is paused
       const result = await chrome.storage.local.get(['trackingSettings']);
       const settings = result.trackingSettings || { isPaused: false, disabledSites: [] };
 
       if (settings.isPaused) {
-        console.log('Tracking is paused, skipping API analysis');
+        console.log('Tracking is paused, skipping OAuth analysis');
         return;
       }
 
       try {
-        // Fetch the response to analyze it for email data
-        await analyzeResponseForEmail(details);
+        // Extract email from OAuth URL parameters (more reliable than response body)
+        await analyzeOAuthUrlForEmail(details);
       } catch (error) {
-        console.error('Error analyzing response:', error);
+        console.error('Error analyzing OAuth URL:', error);
       }
     }
   },
   {
     urls: ['<all_urls>'],
-    types: ['xmlhttprequest']
+    types: ['main_frame', 'sub_frame']
   }
 );
 
-// Analyze API response for email data
-async function analyzeResponseForEmail(details: any) {
+// Analyze OAuth URLs for email parameters (captures emails during login process)
+async function analyzeOAuthUrlForEmail(details: any) {
   try {
-    // Get current tab to access cookies
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const currentTab = tabs[0];
+    // Extract email from URL parameters in OAuth redirects
+    const url = new URL(details.url);
+    const urlParams = url.searchParams;
 
-    if (!currentTab || !currentTab.url) return;
+    // Common OAuth parameter names that might contain email
+    const emailParamNames = [
+      'email',
+      'user_email',
+      'email_address',
+      'login',
+      'username',
+      'user',
+      'account',
+      'profile',
+      'identity',
+      'email_verified',
+      'email_confirmed'
+    ];
 
-    // Fetch the API endpoint with credentials
-    const response = await fetch(details.url, {
-      method: 'GET',
-      credentials: 'include', // Include cookies for authentication
-      headers: {
-        'Accept': 'application/json, text/plain, */*',
-        'Cache-Control': 'no-cache'
-      }
-    });
+    let capturedEmail: string | null = null;
 
-    if (response.ok) {
-      const contentType = response.headers.get('content-type');
-
-      // Process JSON responses
-      if (contentType && contentType.includes('application/json')) {
-        const data = await response.json();
-
-        // Try Google OAuth extraction first (for Google login flows)
-        const googleEmails = extractGoogleOAuthData(data);
-        const generalEmails = extractEmailsFromResponse(data);
-
-        // Combine and deduplicate
-        const allEmails = [...new Set([...googleEmails, ...generalEmails])];
-
-        for (const email of allEmails) {
-          if (isValidEmail(email)) {
-            console.log('Email found:', email, 'from URL:', details.url);
-
-            // Get the domain from current tab and apply smart grouping
-            const originalDomain = new URL(currentTab.url).hostname;
-            const rootDomain = getRootDomain(originalDomain);
-
-            console.log('Domain mapping:', { original: originalDomain, root: rootDomain });
-
-            // Store the email mapping using root domain
-            await storeEmailMapping(rootDomain, email, details.url);
-          }
+    // Check each parameter for email patterns
+    for (const paramName of emailParamNames) {
+      const paramValue = urlParams.get(paramName);
+      if (paramValue) {
+        const emailMatch = paramValue.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+        if (emailMatch && isValidEmail(emailMatch[0])) {
+          capturedEmail = emailMatch[0];
+          break;
         }
       }
-      // Also try to extract from HTML responses (for some APIs that return HTML)
-      else if (contentType && contentType.includes('text/html')) {
-        const html = await response.text();
-        const emails = extractEmailsFromHTML(html);
+    }
 
-        for (const email of emails) {
-          if (isValidEmail(email)) {
-            console.log('Email found in HTML:', email, 'from URL:', details.url);
-
-            // Get the domain from current tab and apply smart grouping
-            const originalDomain = new URL(currentTab.url).hostname;
-            const rootDomain = getRootDomain(originalDomain);
-
-            console.log('Domain mapping:', { original: originalDomain, root: rootDomain });
-
-            // Store the email mapping using root domain
-            await storeEmailMapping(rootDomain, email, details.url);
+    // Also check all parameters for email patterns (in case email is in unexpected param)
+    if (!capturedEmail) {
+      for (const [key, value] of urlParams.entries()) {
+        if (value && value.includes('@')) {
+          const emailMatch = value.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+          if (emailMatch && isValidEmail(emailMatch[0])) {
+            capturedEmail = emailMatch[0];
+            break;
           }
         }
       }
     }
+
+    if (capturedEmail) {
+      console.log('Email found in OAuth URL:', capturedEmail, 'from URL:', details.url);
+
+      // Get the current tab to determine the domain
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const currentTab = tabs[0];
+
+      if (currentTab && currentTab.url) {
+        const originalDomain = new URL(currentTab.url).hostname;
+        const rootDomain = getRootDomain(originalDomain);
+
+        console.log('OAuth Domain mapping:', { original: originalDomain, root: rootDomain });
+
+        // Store the email mapping using root domain
+        await storeEmailMapping(rootDomain, capturedEmail, details.url);
+      }
+    }
   } catch (error) {
-    console.error('Error fetching API response:', error);
+    console.error('Error analyzing OAuth URL:', error);
   }
 }
+
+// Analyze API response for email data - DISABLED to avoid capturing encrypted emails after login
+// async function analyzeResponseForEmail(details: any) {
+//   try {
+//     // Get current tab to access cookies
+//     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+//     const currentTab = tabs[0];
+
+//     if (!currentTab || !currentTab.url) return;
+
+//     // Fetch the API endpoint with credentials
+//     const response = await fetch(details.url, {
+//       method: 'GET',
+//       credentials: 'include', // Include cookies for authentication
+//       headers: {
+//         'Accept': 'application/json, text/plain, */*',
+//         'Cache-Control': 'no-cache'
+//       }
+//     });
+
+//     if (response.ok) {
+//       const contentType = response.headers.get('content-type');
+
+//       // Process JSON responses
+//       if (contentType && contentType.includes('application/json')) {
+//         const data = await response.json();
+
+//         // Try Google OAuth extraction first (for Google login flows)
+//         const googleEmails = extractGoogleOAuthData(data);
+//         const generalEmails = extractEmailsFromResponse(data);
+
+//         // Combine and deduplicate
+//         const allEmails = [...new Set([...googleEmails, ...generalEmails])];
+
+//         for (const email of allEmails) {
+//           if (isValidEmail(email)) {
+//             console.log('Email found:', email, 'from URL:', details.url);
+
+//             // Get the domain from current tab and apply smart grouping
+//             const originalDomain = new URL(currentTab.url).hostname;
+//             const rootDomain = getRootDomain(originalDomain);
+
+//             console.log('Domain mapping:', { original: originalDomain, root: rootDomain });
+
+//             // Store the email mapping using root domain
+//             await storeEmailMapping(rootDomain, email, details.url);
+//           }
+//         }
+//       }
+//       // Also try to extract from HTML responses (for some APIs that return HTML)
+//       else if (contentType && contentType.includes('text/html')) {
+//         const html = await response.text();
+//         const emails = extractEmailsFromHTML(html);
+
+//         for (const email of emails) {
+//           if (isValidEmail(email)) {
+//             console.log('Email found in HTML:', email, 'from URL:', details.url);
+
+//             // Get the domain from current tab and apply smart grouping
+//             const originalDomain = new URL(currentTab.url).hostname;
+//             const rootDomain = getRootDomain(originalDomain);
+
+//             console.log('Domain mapping:', { original: originalDomain, root: rootDomain });
+
+//             // Store the email mapping using root domain
+//             await storeEmailMapping(rootDomain, email, details.url);
+//           }
+//         }
+//       }
+//     }
+//   } catch (error) {
+//     console.error('Error fetching API response:', error);
+//   }
+// }
 
 // Extract emails from JSON response (enhanced with Gmail detection)
 function extractEmailsFromResponse(data: any): string[] {
@@ -432,7 +508,7 @@ function isValidEmail(email: string): boolean {
   return !isInvalid && email.includes('@') && email.length > 5;
 }
 
-// Store email mapping for domain
+// Store email mapping for domain (only keep last used email per domain)
 async function storeEmailMapping(domain: string, email: string, apiUrl: string) {
   try {
     const mappings = await chrome.storage.local.get(['emailMappings']);
@@ -445,6 +521,7 @@ async function storeEmailMapping(domain: string, email: string, apiUrl: string) 
     const existingEntry = storage[domain].find((entry: any) => entry.email === email);
 
     if (!existingEntry) {
+      // Add new entry (track every login, don't replace)
       storage[domain].unshift({
         email: email,
         apiUrl: apiUrl,
@@ -452,8 +529,9 @@ async function storeEmailMapping(domain: string, email: string, apiUrl: string) 
         count: 1
       });
 
-      if (storage[domain].length > 5) {
-        storage[domain] = storage[domain].slice(0, 5);
+      // Keep only last 10 emails per domain to avoid storage bloat
+      if (storage[domain].length > 10) {
+        storage[domain] = storage[domain].slice(0, 10);
       }
 
       await chrome.storage.local.set({ emailMappings: storage });
@@ -469,6 +547,7 @@ async function storeEmailMapping(domain: string, email: string, apiUrl: string) 
 
 // Listen for messages from popup and content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Background received message:', message.type, message.data);
   if (message.type === 'GET_EMAIL_MAPPINGS') {
     chrome.storage.local.get(['emailMappings'], (result) => {
       sendResponse({ mappings: result.emailMappings || {} });
@@ -484,6 +563,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'LOGIN_DETECTED') {
+    console.log('Processing LOGIN_DETECTED message:', message.data);
     const { email, website, timestamp, url, method } = message.data;
 
     // Get current mappings
@@ -498,7 +578,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const existingEntry = mappings[website].find((entry: any) => entry.email === email);
 
       if (!existingEntry) {
-        // Add new entry
+        // Add new entry (track every login, don't replace)
         mappings[website].unshift({
           email: email,
           apiUrl: url,
@@ -506,15 +586,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           count: 1
         });
 
-        // Keep only last 5 emails per domain
-        if (mappings[website].length > 5) {
-          mappings[website] = mappings[website].slice(0, 5);
+        // Keep only last 10 emails per domain to avoid storage bloat
+        if (mappings[website].length > 10) {
+          mappings[website] = mappings[website].slice(0, 10);
         }
 
         // Save updated mappings
         chrome.storage.local.set({ emailMappings: mappings }, () => {
-          console.log('Login detected and stored:', { email, website, method });
-          sendResponse({ success: true });
+          if (chrome.runtime.lastError) {
+            console.error('Error saving email mappings:', chrome.runtime.lastError);
+            sendResponse({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            console.log('Login detected and stored:', { email, website, method });
+            sendResponse({ success: true });
+          }
         });
       } else {
         // Update existing entry
@@ -522,8 +607,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         existingEntry.count += 1;
 
         chrome.storage.local.set({ emailMappings: mappings }, () => {
-          console.log('Login count updated:', { email, website, newCount: existingEntry.count });
-          sendResponse({ success: true });
+          if (chrome.runtime.lastError) {
+            console.error('Error updating email count:', chrome.runtime.lastError);
+            sendResponse({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            console.log('Login count updated:', { email, website, newCount: existingEntry.count });
+            sendResponse({ success: true });
+          }
         });
       }
     });
@@ -544,6 +634,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const existingEntry = mappings[domain].find((entry: any) => entry.email === email);
 
       if (!existingEntry) {
+        // Add new entry (track every login, don't replace)
         mappings[domain].unshift({
           email: email,
           apiUrl: `manual://${domain}`,
@@ -551,8 +642,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           count: 1
         });
 
-        if (mappings[domain].length > 5) {
-          mappings[domain] = mappings[domain].slice(0, 5);
+        // Keep only last 10 emails per domain to avoid storage bloat
+        if (mappings[domain].length > 10) {
+          mappings[domain] = mappings[domain].slice(0, 10);
         }
 
         chrome.storage.local.set({ emailMappings: mappings }, () => {
@@ -604,8 +696,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'EDIT_DOMAIN') {
+    const { oldDomain, newDomain } = message.data;
+    chrome.storage.local.get(['emailMappings'], (result) => {
+      const mappings = result.emailMappings || {};
+
+      if (mappings[oldDomain]) {
+        // Create new domain entry with all emails from old domain
+        mappings[newDomain] = mappings[oldDomain];
+        // Remove old domain
+        delete mappings[oldDomain];
+
+        chrome.storage.local.set({ emailMappings: mappings }, () => {
+          sendResponse({ success: true });
+        });
+      } else {
+        sendResponse({ success: false, error: 'Domain not found' });
+      }
+    });
+    return true;
+  }
+
   if (message.type === 'EDIT_EMAIL') {
-    const { domain, oldEmail, newEmail } = message.data;
+    const { domain, oldEmail, newEmail, description } = message.data;
     chrome.storage.local.get(['emailMappings'], (result) => {
       const mappings = result.emailMappings || {};
 
@@ -615,6 +728,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (emailIndex >= 0) {
           mappings[domain][emailIndex].email = newEmail;
           mappings[domain][emailIndex].timestamp = Date.now();
+          if (description !== undefined) {
+            mappings[domain][emailIndex].description = description;
+          }
 
           chrome.storage.local.set({ emailMappings: mappings }, () => {
             sendResponse({ success: true });

@@ -7,6 +7,7 @@ export interface EmailMapping {
   apiUrl: string;
   timestamp: number;
   count: number;
+  description?: string;
 }
 
 export interface DomainMappings {
@@ -35,7 +36,7 @@ export interface StorageStats {
 const STORAGE_KEY = 'emailMappings';
 
 /**
- * Save email mapping for a domain
+ * Save email mapping for a domain (only keep last used email per domain)
  */
 export async function saveEmailMapping(
   domain: string,
@@ -58,7 +59,7 @@ export async function saveEmailMapping(
       mappings[domain][existingIndex].count += 1;
       mappings[domain][existingIndex].apiUrl = apiUrl; // Update with latest API URL
     } else {
-      // Add new entry
+      // Add new entry (track every login, don't replace)
       mappings[domain].unshift({
         email: email,
         apiUrl: apiUrl,
@@ -66,9 +67,9 @@ export async function saveEmailMapping(
         count: 1
       });
 
-      // Keep only last 5 emails per domain to avoid storage bloat
-      if (mappings[domain].length > 5) {
-        mappings[domain] = mappings[domain].slice(0, 5);
+      // Keep only last 10 emails per domain to avoid storage bloat
+      if (mappings[domain].length > 10) {
+        mappings[domain] = mappings[domain].slice(0, 10);
       }
     }
 

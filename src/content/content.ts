@@ -23,6 +23,9 @@ function initializeContentScript(): void {
  * Monitor for login-related events on the page
  */
 function monitorForLoginEvents(): void {
+  // Monitor email input field interactions (tap-to-capture)
+  monitorEmailInputFields();
+
   // Monitor form submissions (for manual login detection)
   document.addEventListener('submit', handleFormSubmission);
 
@@ -31,6 +34,216 @@ function monitorForLoginEvents(): void {
 
   // Monitor for page visibility changes (tab switching)
   document.addEventListener('visibilitychange', handleVisibilityChange);
+
+  // Clean up banners when navigating away from page
+  window.addEventListener('beforeunload', () => {
+    removeExistingBanners();
+  });
+}
+
+/**
+ * Monitor email input fields for user interactions (tap-to-capture)
+ */
+function monitorEmailInputFields(): void {
+  // Monitor existing email input fields
+  const emailInputs = document.querySelectorAll('input[type="email"], input[name*="email"]');
+  emailInputs.forEach(setupEmailInputMonitoring);
+
+  // Monitor dynamically added email input fields
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const element = node as Element;
+          const newEmailInputs = element.querySelectorAll?.('input[type="email"], input[name*="email"]');
+          if (newEmailInputs.length > 0) {
+            newEmailInputs.forEach(setupEmailInputMonitoring);
+          }
+        }
+      });
+    });
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+
+/**
+ * Set up monitoring for a specific email input field
+ */
+function setupEmailInputMonitoring(input: Element): void {
+  const emailInput = input as HTMLInputElement;
+
+  // Track focus events (when user taps/clicks on the field)
+  emailInput.addEventListener('focus', () => {
+    // Small delay to allow user to start typing
+    setTimeout(() => {
+      if (emailInput.value && isValidEmail(emailInput.value)) {
+        captureEmailFromInput(emailInput.value);
+      }
+    }, 100);
+  });
+
+  // Track input events (when user types)
+  emailInput.addEventListener('input', () => {
+    if (emailInput.value && isValidEmail(emailInput.value)) {
+      captureEmailFromInput(emailInput.value);
+    }
+  });
+
+  // Track paste events (when user pastes)
+  emailInput.addEventListener('paste', () => {
+    setTimeout(() => {
+      if (emailInput.value && isValidEmail(emailInput.value)) {
+        captureEmailFromInput(emailInput.value);
+      }
+    }, 100);
+  });
+}
+
+/**
+ * Extract email from OAuth URL parameters
+ */
+function extractEmailFromOAuthParams(urlParams: URLSearchParams): string | null {
+  // Common OAuth parameter names that might contain email
+  const emailParamNames = [
+    'email',
+    'user_email',
+    'email_address',
+    'login',
+    'username',
+    'user',
+    'account',
+    'profile',
+    'identity'
+  ];
+
+  // Check each parameter for email patterns
+  for (const paramName of emailParamNames) {
+    const paramValue = urlParams.get(paramName);
+    if (paramValue) {
+      // Look for email pattern in the parameter value
+      const emailMatch = paramValue.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      if (emailMatch && isValidEmail(emailMatch[0])) {
+        return emailMatch[0];
+      }
+    }
+  }
+
+  // Also check all parameters for email patterns (in case email is in unexpected param)
+  for (const [key, value] of urlParams.entries()) {
+    if (value && value.includes('@')) {
+      const emailMatch = value.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      if (emailMatch && isValidEmail(emailMatch[0])) {
+        return emailMatch[0];
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Capture email from OAuth redirect and store it
+ */
+function captureEmailFromOAuth(email: string): void {
+  const domain = window.location.hostname;
+
+  console.log('Email captured from OAuth redirect:', email, 'on domain:', domain);
+
+  // Send login detection to background script
+  chrome.runtime.sendMessage({
+    type: 'LOGIN_DETECTED',
+    data: {
+      email: email,
+      website: domain,
+      timestamp: Date.now(),
+      url: window.location.href,
+      method: 'oauth_capture'
+    }
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error sending OAuth login detection:', chrome.runtime.lastError);
+    } else {
+      console.log('OAuth login detection response:', response);
+    }
+  });
+
+  // Show minimal notification
+  showEmailCapturedNotification(domain, email);
+}
+
+/**
+ * Capture email from input field and store it
+ */
+function captureEmailFromInput(email: string): void {
+  const domain = window.location.hostname;
+
+  console.log('Email captured from input field:', email, 'on domain:', domain);
+
+  // Send login detection to background script
+  chrome.runtime.sendMessage({
+    type: 'LOGIN_DETECTED',
+    data: {
+      email: email,
+      website: domain,
+      timestamp: Date.now(),
+      url: window.location.href,
+      method: 'tap_capture'
+    }
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error sending login detection:', chrome.runtime.lastError);
+    } else {
+      console.log('Login detection response:', response);
+    }
+  });
+
+  // Show minimal notification
+  showEmailCapturedNotification(domain, email);
+}
+
+/**
+ * Show notification when email is captured from input
+ */
+function showEmailCapturedNotification(domain: string, email: string): void {
+  // Create minimal notification element
+  const notification = document.createElement('div');
+  notification.id = 'email-captured-notification';
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #f8f9fa;
+    color: #333;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid #e9ecef;
+    z-index: 10001;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  `;
+
+  notification.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <div style="color: #28a745; font-weight: 500;">✓</div>
+      <div style="flex: 1;">
+        <div style="font-weight: 500; margin-bottom: 1px;">Email captured</div>
+        <div style="color: #666; font-size: 11px;">${escapeHtml(email)}</div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(notification);
+
+  // Auto-remove after 2 seconds
+  setTimeout(() => {
+    if (notification.parentNode) {
+      notification.remove();
+    }
+  }, 2000);
+
+  console.log('Email captured and notification shown:', { domain, email });
 }
 
 /**
@@ -57,6 +270,12 @@ function handleFormSubmission(event: Event): void {
           timestamp: Date.now(),
           url: window.location.href,
           method: 'manual'
+        }
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error sending form login detection:', chrome.runtime.lastError);
+        } else {
+          console.log('Form login detection response:', response);
         }
       });
     }
@@ -109,11 +328,14 @@ function monitorOAuthRedirects(): void {
   const hasOAuthParams = oauthParams.some(param => urlParams.has(param));
 
   if (hasOAuthParams) {
-    console.log('OAuth callback detected');
-    // This might indicate a successful login
-    setTimeout(() => {
-      attemptToExtractEmailFromPage();
-    }, 2000); // Wait a bit for page to load
+    console.log('OAuth callback detected with params:', urlParams.toString());
+
+    // Extract email from OAuth URL parameters (captures during login process)
+    const emailFromOAuth = extractEmailFromOAuthParams(urlParams);
+    if (emailFromOAuth) {
+      console.log('Email found in OAuth params:', emailFromOAuth);
+      captureEmailFromOAuth(emailFromOAuth);
+    }
   }
 
   // Monitor for URL changes (for SPA navigation)
@@ -126,10 +348,14 @@ function monitorOAuthRedirects(): void {
       const hasNewOAuthParams = oauthParams.some(param => newUrlParams.has(param));
 
       if (hasNewOAuthParams) {
-        console.log('OAuth URL change detected');
-        setTimeout(() => {
-          attemptToExtractEmailFromPage();
-        }, 1500);
+        console.log('OAuth URL change detected with params:', newUrlParams.toString());
+
+        // Extract email from OAuth URL parameters (captures during login process)
+        const emailFromOAuth = extractEmailFromOAuthParams(newUrlParams);
+        if (emailFromOAuth) {
+          console.log('Email found in OAuth URL change:', emailFromOAuth);
+          captureEmailFromOAuth(emailFromOAuth);
+        }
       }
     }
   });
@@ -141,11 +367,17 @@ function monitorOAuthRedirects(): void {
  * Handle page visibility changes
  */
 function handleVisibilityChange(): void {
-  if (!document.hidden) {
+  if (document.hidden) {
+    // Page is being hidden, clean up any existing banners
+    removeExistingBanners();
+  } else {
     // Page became visible, might be after OAuth redirect
+    // Check if we should show banner for this page
     setTimeout(() => {
-      attemptToExtractEmailFromPage();
-    }, 1000);
+      if (isLoginPage()) {
+        checkForLoginPageAndShowBanner();
+      }
+    }, 500);
   }
 }
 
@@ -482,6 +714,11 @@ async function checkForNewAccount(domain: string, email: string): Promise<boolea
       data: { domain, email }
     });
 
+    if (chrome.runtime.lastError) {
+      console.error('Error checking for new account:', chrome.runtime.lastError);
+      return false;
+    }
+
     return response && response.isNew === true;
   } catch (error) {
     console.error('Error checking for new account:', error);
@@ -502,6 +739,12 @@ function showNewAccountNotification(domain: string, email: string): void {
       timestamp: Date.now(),
       url: window.location.href,
       method: 'oauth'
+    }
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error sending OAuth login detection:', chrome.runtime.lastError);
+    } else {
+      console.log('OAuth login detection response:', response);
     }
   });
 
@@ -597,6 +840,16 @@ function handleBackgroundMessage(
 // Banner element reference
 let notificationBanner: HTMLElement | null = null;
 
+// Function to remove existing banners
+function removeExistingBanners(): void {
+  // Remove any existing notification banners
+  const existingBanners = document.querySelectorAll('#email-tracker-banner, #new-account-notification, #email-captured-notification');
+  existingBanners.forEach(banner => banner.remove());
+
+  // Reset banner reference
+  notificationBanner = null;
+}
+
 /**
  * Check if current page is a login page and show notification banner
  */
@@ -613,11 +866,19 @@ async function checkForLoginPageAndShowBanner(): Promise<void> {
         type: 'GET_EMAIL_MAPPINGS'
       });
 
+      if (chrome.runtime.lastError) {
+        console.error('Error getting email mappings:', chrome.runtime.lastError);
+        return;
+      }
+
       if (response && response.mappings && response.mappings[domain]) {
         const emails = response.mappings[domain];
         if (emails && emails.length > 0) {
+          console.log(`Found ${emails.length} emails for domain ${domain}, showing banner`);
           showLoginNotificationBanner(emails);
         }
+      } else {
+        console.log(`No emails found for domain ${domain} in storage`);
       }
     } catch (error) {
       console.error('Error checking for stored emails:', error);
@@ -629,11 +890,17 @@ async function checkForLoginPageAndShowBanner(): Promise<void> {
 /**
  * Show notification banner with previously used emails
  */
-function showLoginNotificationBanner(emails: Array<{ email: string; timestamp: number; count: number }>): void {
-  // Remove existing banner if present
-  if (notificationBanner) {
-    notificationBanner.remove();
+function showLoginNotificationBanner(emails: Array<{ email: string; timestamp: number; count: number; description?: string }>): void {
+  // Remove any existing banners first
+  removeExistingBanners();
+
+  // Get the most recently used emails for this website (show last 2)
+  if (emails.length === 0) {
+    return; // No emails to show
   }
+
+  // Sort by timestamp (most recent first) and take the first 2
+  const recentEmails = emails.sort((a, b) => b.timestamp - a.timestamp).slice(0, 2);
 
   // Create banner element
   notificationBanner = document.createElement('div');
@@ -650,9 +917,11 @@ function showLoginNotificationBanner(emails: Array<{ email: string; timestamp: n
     font-family: Arial, sans-serif;
   `;
 
-  const emailList = emails.slice(0, 3).map(email => {
-    const lastUsed = new Date(email.timestamp).toLocaleDateString();
-    return `• ${email.email} (Last: ${lastUsed})`;
+  // Create email list for display
+  const emailList = recentEmails.map(email => {
+    const lastUsed = new Date(email.timestamp).toLocaleString();
+    const description = email.description ? ` - ${escapeHtml(email.description)}` : '';
+    return `${escapeHtml(email.email)}${description} <span style="opacity: 0.8;">(Last: ${lastUsed})</span>`;
   }).join('<br>');
 
   notificationBanner.innerHTML = `
@@ -663,8 +932,8 @@ function showLoginNotificationBanner(emails: Array<{ email: string; timestamp: n
           <strong>Email Tracker</strong>
         </div>
         <div style="font-size: 13px; opacity: 0.9;">
-          You previously used:
-          <div style="margin-top: 4px; line-height: 1.4;">
+          Previously used emails for this site:
+          <div style="margin-top: 4px; line-height: 1.4; font-weight: 500;">
             ${emailList}
           </div>
         </div>
@@ -708,7 +977,7 @@ function showLoginNotificationBanner(emails: Array<{ email: string; timestamp: n
   // Insert banner at the top of the page
   document.body.insertBefore(notificationBanner, document.body.firstChild);
 
-  console.log('Login notification banner shown for domain:', window.location.hostname);
+  console.log('Login notification banner shown for domain:', window.location.hostname, 'with emails:', recentEmails.map(e => e.email));
 }
 
 /**

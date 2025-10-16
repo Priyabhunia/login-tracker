@@ -89,6 +89,7 @@ function createDomainElement(domain: string, emails: EmailMapping[]): HTMLElemen
     <div class="domain-header">
       <span class="domain-name">${escapeHtml(domain)}</span>
       <div class="domain-controls">
+        <button class="domain-btn edit" data-domain="${domain}" title="Edit domain">✏️</button>
         <button class="domain-btn add-email" data-domain="${domain}" title="Add email">＋</button>
         <button class="domain-btn delete" data-domain="${domain}" title="Delete domain">×</button>
       </div>
@@ -121,12 +122,13 @@ function createEmailElement(domain: string, email: EmailMapping): HTMLElement {
   emailDiv.innerHTML = `
     <div class="email-info">
       <div class="email-address">${escapeHtml(email.email)}</div>
+      ${email.description ? `<div class="email-description">${escapeHtml(email.description)}</div>` : ''}
       <div class="email-meta">
         <span>Last: ${lastUsed}</span> • <span>${email.count} ${loginText}</span>
       </div>
     </div>
     <div class="email-controls">
-      <button class="email-btn edit" data-domain="${domain}" data-email="${email.email}" title="Edit">✏️</button>
+      <button class="email-btn edit" data-domain="${domain}" data-email="${email.email}" data-description="${escapeHtml(email.description || '')}" title="Edit">✏️</button>
       <button class="email-btn delete" data-domain="${domain}" data-email="${email.email}" title="Delete">×</button>
     </div>
   `;
@@ -220,6 +222,14 @@ function handleDynamicEvents(event: Event): void {
     }
   }
 
+  // Domain edit button
+  if (target.classList.contains('domain-btn') && target.classList.contains('edit')) {
+    const domain = target.getAttribute('data-domain');
+    if (domain) {
+      showEditDomainForm(domain);
+    }
+  }
+
   // Domain delete button
   if (target.classList.contains('domain-btn') && target.classList.contains('delete')) {
     const domain = target.getAttribute('data-domain');
@@ -232,8 +242,9 @@ function handleDynamicEvents(event: Event): void {
   if (target.classList.contains('email-btn') && target.classList.contains('edit')) {
     const domain = target.getAttribute('data-domain');
     const email = target.getAttribute('data-email');
+    const description = target.getAttribute('data-description');
     if (domain && email) {
-      showEditEmailForm(domain, email);
+      showEditEmailForm(domain, email, description || undefined);
     }
   }
 
@@ -310,9 +321,65 @@ function showAddEmailForm(domain: string): void {
 }
 
 /**
+ * Show edit domain form
+ */
+function showEditDomainForm(currentDomain: string): void {
+  const container = document.getElementById('emails-container');
+  if (!container) return;
+
+  // Remove existing forms
+  const existingForm = container.querySelector('.add-form, .edit-domain-form');
+  if (existingForm) {
+    existingForm.remove();
+  }
+
+  const formDiv = document.createElement('div');
+  formDiv.className = 'edit-domain-form';
+
+  formDiv.innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label>Current Domain</label>
+        <input type="text" id="current-domain-input" placeholder="example.com" value="${escapeHtml(currentDomain)}" readonly>
+      </div>
+      <div class="form-group">
+        <label>New Domain</label>
+        <input type="text" id="new-domain-input" placeholder="newexample.com" value="${escapeHtml(currentDomain)}">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="form-btn save" id="save-domain-edit">Update Domain</button>
+      <button class="form-btn cancel" id="cancel-domain-edit">Cancel</button>
+    </div>
+  `;
+
+  // Insert at the top
+  container.insertBefore(formDiv, container.firstChild);
+
+  // Focus on new domain input
+  const newDomainInput = document.getElementById('new-domain-input') as HTMLInputElement;
+  if (newDomainInput) {
+    newDomainInput.focus();
+    newDomainInput.select();
+  }
+
+  // Set up form event listeners
+  const saveBtn = document.getElementById('save-domain-edit');
+  const cancelBtn = document.getElementById('cancel-domain-edit');
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', handleEditDomain);
+  }
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => formDiv.remove());
+  }
+}
+
+/**
  * Show edit email form
  */
-function showEditEmailForm(domain: string, currentEmail: string): void {
+function showEditEmailForm(domain: string, currentEmail: string, currentDescription?: string): void {
   const container = document.getElementById('emails-container');
   if (!container) return;
 
@@ -334,6 +401,12 @@ function showEditEmailForm(domain: string, currentEmail: string): void {
       <div class="form-group">
         <label>Email</label>
         <input type="email" id="edit-email-input" placeholder="user@example.com" value="${escapeHtml(currentEmail)}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group full-width">
+        <label>Description (optional)</label>
+        <input type="text" id="edit-description-input" placeholder="Add a description for this email" value="${escapeHtml(currentDescription || '')}">
       </div>
     </div>
     <div class="form-actions">
@@ -366,14 +439,53 @@ function showEditEmailForm(domain: string, currentEmail: string): void {
 }
 
 /**
+ * Handle edit domain form submission
+ */
+async function handleEditDomain(): Promise<void> {
+  const currentDomainInput = document.getElementById('current-domain-input') as HTMLInputElement;
+  const newDomainInput = document.getElementById('new-domain-input') as HTMLInputElement;
+
+  const currentDomain = currentDomainInput?.value.trim();
+  const newDomain = newDomainInput?.value.trim();
+
+  if (!currentDomain || !newDomain) {
+    alert('Please fill in both domain fields');
+    return;
+  }
+
+  if (currentDomain === newDomain) {
+    alert('New domain must be different from current domain');
+    return;
+  }
+
+  try {
+    // Send to background script for storage
+    const response = await sendMessageToBackground('EDIT_DOMAIN', { oldDomain: currentDomain, newDomain });
+
+    if (response && response.success) {
+      // Reload data
+      await loadEmailData();
+    } else {
+      alert('Failed to update domain');
+    }
+  } catch (error) {
+    console.error('Error updating domain:', error);
+    alert('Failed to update domain');
+  }
+}
+
+/**
  * Handle edit email form submission
  */
 async function handleEditEmail(): Promise<void> {
   const domainInput = document.getElementById('edit-domain-input') as HTMLInputElement;
   const emailInput = document.getElementById('edit-email-input') as HTMLInputElement;
+  const descriptionInput = document.getElementById('edit-description-input') as HTMLInputElement;
 
   const domain = domainInput?.value.trim();
+  const currentEmailValue = emailInput?.value.trim(); // This is the current email before editing
   const newEmail = emailInput?.value.trim();
+  const description = descriptionInput?.value.trim() || '';
 
   if (!domain || !newEmail) {
     alert('Please fill in both domain and email fields');
@@ -387,7 +499,7 @@ async function handleEditEmail(): Promise<void> {
 
   try {
     // Send to background script for storage
-    const response = await sendMessageToBackground('EDIT_EMAIL', { domain, oldEmail: '', newEmail });
+    const response = await sendMessageToBackground('EDIT_EMAIL', { domain, oldEmail: currentEmailValue, newEmail, description });
 
     if (response && response.success) {
       // Reload data
