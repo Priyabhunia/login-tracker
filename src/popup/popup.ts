@@ -1,6 +1,10 @@
-// Enhanced Popup script for Email Tracker Extension
+// Enhanced Popup script for Email Tracker Extension with Convex sync support
 
 import { EmailMapping, DomainMappings } from '../utils/storage';
+import { SyncService } from '../utils/syncService';
+
+// Global sync service instance
+const syncService = new SyncService();
 
 /**
  * Popup initialization
@@ -21,6 +25,14 @@ async function initializePopup(): Promise<void> {
 
   // Set up event listeners
   setupEventListeners();
+
+  // Initialize sync functionality
+  await initializeSync();
+
+  // Re-check sync status after a short delay to allow Convex client to initialize
+  setTimeout(async () => {
+    await initializeSync();
+  }, 1000);
 }
 
 /**
@@ -79,6 +91,8 @@ function displayDomainOrganizedData(mappings: DomainMappings): void {
 /**
  * Create domain container element
  */
+
+
 function createDomainElement(domain: string, emails: EmailMapping[]): HTMLElement {
   const domainDiv = document.createElement('div');
   domainDiv.className = 'domain-item';
@@ -685,6 +699,146 @@ function showTemporaryMessage(message: string): void {
   }, 3000);
 }
 
+// ==================== SYNC FUNCTIONALITY ====================
+
+/**
+ * Initialize sync functionality
+ */
+async function initializeSync(): Promise<void> {
+  const syncButton = document.getElementById('sync-button') as HTMLButtonElement;
+  const syncStatus = document.getElementById('sync-status') as HTMLDivElement;
+
+  if (!syncButton) return;
+
+  console.log('🔄 Checking Convex connection...');
+
+  // Try to refresh the connection first
+  const refreshSuccess = await syncService.refreshConnection();
+
+  // Check if sync is available after refresh
+  const isAvailable = syncService.isSyncAvailable();
+
+  console.log('📡 Sync available:', isAvailable, 'Refresh success:', refreshSuccess);
+
+  // Also check the sync status for more details
+  const status = await syncService.getSyncStatus();
+  console.log('📊 Sync status:', status);
+
+  // Show debug info if available
+  await showDebugInfo();
+
+  if (isAvailable) {
+    syncButton.disabled = false;
+    syncButton.textContent = '🔄 Sync with Cloud';
+    syncButton.title = 'Sync your data with cloud storage';
+
+    // Set up click handler (if not already set)
+    if (!syncButton.hasAttribute('data-listener-added')) {
+      syncButton.addEventListener('click', handleSyncClick);
+      syncButton.setAttribute('data-listener-added', 'true');
+    }
+
+    // Show success status
+    if (syncStatus) {
+      syncStatus.style.display = 'block';
+      syncStatus.innerHTML = '<small style="color: #10b981;">✅ Cloud sync ready</small>';
+    }
+  } else {
+    syncButton.disabled = true;
+    syncButton.textContent = '🔄 Retry Connection';
+    syncButton.title = 'Click to retry Convex connection';
+
+    // Set up click handler to retry connection
+    if (!syncButton.hasAttribute('data-retry-listener')) {
+      syncButton.addEventListener('click', async () => {
+        syncButton.textContent = '🔄 Connecting...';
+        syncButton.disabled = true;
+
+        // Clear status
+        if (syncStatus) {
+          syncStatus.innerHTML = '<small style="color: #666;">Retrying connection...</small>';
+        }
+
+        // Wait a moment then retry
+        setTimeout(async () => {
+          await initializeSync();
+        }, 1000);
+      });
+      syncButton.setAttribute('data-retry-listener', 'true');
+    }
+
+    // Show error status
+    if (syncStatus) {
+      syncStatus.style.display = 'block';
+      syncStatus.innerHTML = '<small style="color: #ef4444;">❌ Cloud sync unavailable - check console for errors</small>';
+    }
+  }
+}
+
+/**
+ * Handle sync button click
+ */
+async function handleSyncClick(): Promise<void> {
+  const syncButton = document.getElementById('sync-button') as HTMLButtonElement;
+  const syncStatus = document.getElementById('sync-status') as HTMLDivElement;
+
+  if (!syncButton || !syncStatus) return;
+
+  // Update UI to show syncing state
+  syncButton.disabled = true;
+  syncButton.textContent = '🔄 Syncing...';
+
+  // Show status area
+  syncStatus.style.display = 'block';
+  syncStatus.innerHTML = '<small style="color: #666;">Syncing with cloud...</small>';
+
+  try {
+    // Perform complete sync (includes UI refresh)
+    const result = await syncService.forceCompleteSync();
+
+    if (result.success) {
+      // Success
+      syncButton.textContent = '✅ Synced!';
+      syncStatus.innerHTML = `<small style="color: #10b981;">
+        ✅ Success! Synced ${result.mergedCount || 0} email entries
+        ${result.localCount !== undefined ? `(Local: ${result.localCount})` : ''}
+        ${result.remoteCount !== undefined ? `(Cloud: ${result.remoteCount})` : ''}
+      </small>`;
+
+      console.log('🔄 Reloading email data after sync...');
+
+      // Reload email data to show merged data from both sources
+      await loadEmailData();
+
+      // Reset button after 3 seconds
+      setTimeout(() => {
+        syncButton.textContent = '🔄 Sync with Cloud';
+        syncButton.disabled = false;
+      }, 3000);
+    } else {
+      // Error
+      syncButton.textContent = '❌ Sync Failed';
+      syncStatus.innerHTML = `<small style="color: #ef4444;">Error: ${result.error}</small>`;
+
+      // Reset button after 5 seconds
+      setTimeout(() => {
+        syncButton.textContent = '🔄 Sync with Cloud';
+        syncButton.disabled = false;
+      }, 5000);
+    }
+  } catch (error) {
+    // Unexpected error
+    syncButton.textContent = '❌ Sync Error';
+    syncStatus.innerHTML = `<small style="color: #ef4444;">Unexpected error: ${error instanceof Error ? error.message : 'Unknown error'}</small>`;
+
+    // Reset button after 5 seconds
+    setTimeout(() => {
+      syncButton.textContent = '🔄 Sync with Cloud';
+      syncButton.disabled = false;
+    }, 5000);
+  }
+}
+
 /**
  * Send message to background script
  */
@@ -781,6 +935,35 @@ function hideAllSections(): void {
   // Remove any forms
   const forms = document.querySelectorAll('.add-form');
   forms.forEach(form => form.remove());
+}
+
+/**
+ * Show debug information for troubleshooting
+ */
+async function showDebugInfo(): Promise<void> {
+  const debugInfo = document.getElementById('debug-info');
+  if (!debugInfo) return;
+
+  try {
+    const status = await syncService.getSyncStatus();
+    const userId = syncService.getCurrentUserId();
+
+    debugInfo.innerHTML = `
+      <details style="margin-top: 8px;">
+        <summary style="font-size: 10px; color: #666; cursor: pointer;">🔧 Debug Info</summary>
+        <div style="font-size: 10px; color: #999; margin-top: 4px; line-height: 1.4;">
+          <div>User ID: ${userId || 'Not set'}</div>
+          <div>Local: ${status.localCount || 0} emails</div>
+          <div>Remote: ${status.remoteCount || 0} emails</div>
+          <div>Available: ${status.available ? '✅' : '❌'}</div>
+        </div>
+      </details>
+    `;
+
+    debugInfo.style.display = 'block';
+  } catch (error) {
+    console.error('Error showing debug info:', error);
+  }
 }
 
 /**

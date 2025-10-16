@@ -41,6 +41,13 @@
             <div class="control-buttons">
               <button id="add-manual" class="add-btn">+ Manually Add</button>
               <button id="toggle-tracking" class="toggle-btn">⏸️ Pause Tracking</button>
+              <button id="sync-button" class="sync-btn" disabled>🔄 Sync with Cloud</button>
+            </div>
+            <div id="sync-status" class="sync-status" style="display: none;">
+              <!-- Sync status messages will appear here -->
+            </div>
+            <div id="debug-info" class="debug-info" style="display: none;">
+              <!-- Debug information will appear here -->
             </div>
           </div>
           <div id="emails-container" class="emails-container">
@@ -54,6 +61,7 @@
       <button id="clear-data" class="clear-btn">Clear All Data</button>
       <div class="footer-info">
         <small>Emails are stored locally in your browser</small>
+        <small class="sync-info">• Use "Sync with Cloud" to backup data online</small>
       </div>
     </footer>
   </div>

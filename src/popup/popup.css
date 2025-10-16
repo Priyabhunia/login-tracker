@@ -109,7 +109,7 @@ body {
   gap: 8px;
 }
 
-.add-btn, .toggle-btn {
+.add-btn, .toggle-btn, .sync-btn {
   background: #007cba;
   color: white;
   border: none;
@@ -121,6 +121,21 @@ body {
 
 .add-btn:hover, .toggle-btn:hover {
   background: #005a87;
+}
+
+.sync-btn {
+  background: #10b981;
+  font-size: 12px;
+}
+
+.sync-btn:hover:not(:disabled) {
+  background: #059669;
+}
+
+.sync-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .toggle-btn.paused {
@@ -221,6 +236,46 @@ body {
 .footer-info small {
   color: #94a3b8;
   font-size: 11px;
+}
+
+/* Sync status styling */
+.sync-status {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+}
+
+.sync-status:empty {
+  display: none;
+}
+
+.sync-info {
+  color: #6b7280 !important;
+}
+
+/* Debug info styling */
+.debug-info {
+  margin-top: 8px;
+  padding: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+}
+
+.debug-info details {
+  font-size: 11px;
+}
+
+.debug-info summary {
+  font-weight: 500;
+  color: #64748b;
+}
+
+.debug-info div {
+  margin: 2px 0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 }
 
 /* Scrollbar styling */
